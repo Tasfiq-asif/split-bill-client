@@ -3,37 +3,62 @@
 import { useState } from "react";
 import { useAppDispatch } from "@/store/hooks";
 import { createExpense } from "@/store/slices/expenseSlice";
+import type { CustomCategory } from "@/store/slices/groupSlice";
 import { X } from "lucide-react";
 
-interface UserRef {
+const BUILT_IN_CATEGORIES = [
+  { value: "general", label: "General" },
+  { value: "food", label: "Food" },
+  { value: "transport", label: "Transport" },
+  { value: "accommodation", label: "Accommodation" },
+  { value: "entertainment", label: "Entertainment" },
+  { value: "shopping", label: "Shopping" },
+  { value: "utilities", label: "Utilities" },
+  { value: "rent", label: "Rent" },
+  { value: "groceries", label: "Groceries" },
+  { value: "health", label: "Health" },
+  { value: "education", label: "Education" },
+  { value: "gifts", label: "Gifts" },
+  { value: "services", label: "Services" },
+  { value: "subscriptions", label: "Subscriptions" },
+  { value: "other", label: "Other" },
+];
+
+export interface Participant {
   id: string;
-  email: string;
   name: string;
+  email?: string;
+  type: "member" | "guest";
 }
 
 interface ExpenseModalProps {
   groupId: string;
-  members: UserRef[];
+  participants: Participant[];
+  currentUserId: string;
   currency: string;
+  customCategories?: CustomCategory[];
   onClose: () => void;
 }
 
-export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseModalProps) {
+export function ExpenseModal({ groupId, participants, currentUserId, currency, customCategories = [], onClose }: ExpenseModalProps) {
   const dispatch = useAppDispatch();
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState("general");
   const [splitType, setSplitType] = useState("equal");
-  const [selectedMembers, setSelectedMembers] = useState<string[]>(members.map((m) => m.id));
+  const [paidById, setPaidById] = useState(currentUserId);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>(participants.map((p) => p.id));
   const [splitValues, setSplitValues] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const toggleMember = (id: string) => {
-    setSelectedMembers((prev) =>
-      prev.includes(id) ? prev.filter((m) => m !== id) : [...prev, id]
+  const toggleParticipant = (id: string) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
     );
   };
+
+  const paidByParticipant = participants.find((p) => p.id === paidById);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,16 +72,33 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
       return;
     }
 
-    if (selectedMembers.length === 0) {
-      setError("Select at least one member");
+    if (selectedParticipants.length === 0) {
+      setError("Select at least one person to split with");
       setIsSubmitting(false);
       return;
     }
 
-    const splits = selectedMembers.map((memberId) => ({
-      memberId,
-      value: splitType !== "equal" ? parseFloat(splitValues[memberId] || "0") : undefined,
-    }));
+    const splits = selectedParticipants.map((id) => {
+      const p = participants.find((pp) => pp.id === id)!;
+      const base = {
+        value: splitType !== "equal"
+        ? (parseFloat(splitValues[id] || (splitType === "share" ? "1" : "0")) || (splitType === "share" ? 1 : 0))
+        : undefined,
+      };
+      if (p.type === "guest") {
+        return { ...base, guestMemberId: id };
+      }
+      return { ...base, memberId: id };
+    });
+
+    // Determine payer fields
+    const payerData: { payerId?: string; guestPayerId?: string } = {};
+    if (paidByParticipant?.type === "guest") {
+      payerData.guestPayerId = paidById;
+      // payerId defaults to current user on backend (recording user)
+    } else if (paidById !== currentUserId) {
+      payerData.payerId = paidById;
+    }
 
     try {
       await dispatch(
@@ -68,6 +110,7 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
           description: description || undefined,
           splitType,
           splits,
+          ...payerData,
         })
       ).unwrap();
       onClose();
@@ -77,6 +120,9 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
       setIsSubmitting(false);
     }
   };
+
+  const selectStyle = { backgroundColor: "#141625" };
+  const inputClass = "w-full bg-white/[0.05] border border-white/[0.1] text-white placeholder:text-[#64748B] rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-sm";
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
@@ -105,7 +151,7 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full bg-white/[0.05] border border-white/[0.1] text-white placeholder:text-[#64748B] rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-sm"
+              className={inputClass}
               placeholder="0.00"
             />
           </div>
@@ -116,9 +162,25 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-white/[0.05] border border-white/[0.1] text-white placeholder:text-[#64748B] rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-sm"
+              className={inputClass}
               placeholder="What was this for?"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[#94A3B8] mb-1.5">Paid by</label>
+            <select
+              value={paidById}
+              onChange={(e) => setPaidById(e.target.value)}
+              className={`${inputClass}`}
+              style={selectStyle}
+            >
+              {participants.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name || p.email}{p.type === "guest" ? " (Guest)" : ""}{p.id === currentUserId ? " (You)" : ""}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -126,14 +188,21 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full bg-white/[0.05] border border-white/[0.1] text-white rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-sm"
-              style={{ backgroundColor: "#141625" }}
+              className={`${inputClass}`}
+              style={selectStyle}
             >
-              <option value="general">General</option>
-              <option value="food">Food</option>
-              <option value="transport">Transport</option>
-              <option value="accommodation">Accommodation</option>
-              <option value="activities">Activities</option>
+              <optgroup label="Built-in">
+                {BUILT_IN_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </optgroup>
+              {customCategories.length > 0 && (
+                <optgroup label="Custom">
+                  {customCategories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </optgroup>
+              )}
             </select>
           </div>
 
@@ -142,8 +211,8 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
             <select
               value={splitType}
               onChange={(e) => setSplitType(e.target.value)}
-              className="w-full bg-white/[0.05] border border-white/[0.1] text-white rounded-xl px-3 py-2.5 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors text-sm"
-              style={{ backgroundColor: "#141625" }}
+              className={`${inputClass}`}
+              style={selectStyle}
             >
               <option value="equal">Equal</option>
               <option value="exact">Exact Amounts</option>
@@ -155,22 +224,27 @@ export function ExpenseModal({ groupId, members, currency, onClose }: ExpenseMod
           <div>
             <label className="block text-sm font-medium text-[#94A3B8] mb-2">Split Between</label>
             <div className="space-y-2">
-              {members.map((member) => (
-                <div key={member.id} className="flex items-center gap-3">
+              {participants.map((p) => (
+                <div key={p.id} className="flex items-center gap-3">
                   <input
                     type="checkbox"
-                    checked={selectedMembers.includes(member.id)}
-                    onChange={() => toggleMember(member.id)}
+                    checked={selectedParticipants.includes(p.id)}
+                    onChange={() => toggleParticipant(p.id)}
                     className="h-4 w-4 rounded border-white/[0.2] bg-white/[0.05] text-indigo-600 focus:ring-indigo-500"
                   />
-                  <span className="flex-1 text-sm text-white">{member.name || member.email}</span>
-                  {splitType !== "equal" && selectedMembers.includes(member.id) && (
+                  <span className="flex-1 text-sm text-white">
+                    {p.name || p.email}
+                    {p.type === "guest" && (
+                      <span className="text-xs text-amber-400/80 ml-1.5">(Guest)</span>
+                    )}
+                  </span>
+                  {splitType !== "equal" && selectedParticipants.includes(p.id) && (
                     <input
                       type="number"
                       step="0.01"
-                      value={splitValues[member.id] || ""}
+                      value={splitValues[p.id] || ""}
                       onChange={(e) =>
-                        setSplitValues((prev) => ({ ...prev, [member.id]: e.target.value }))
+                        setSplitValues((prev) => ({ ...prev, [p.id]: e.target.value }))
                       }
                       className="w-24 bg-white/[0.05] border border-white/[0.1] text-white placeholder:text-[#64748B] rounded-xl px-2 py-1.5 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
                       placeholder={splitType === "percent" ? "%" : splitType === "share" ? "shares" : "amount"}

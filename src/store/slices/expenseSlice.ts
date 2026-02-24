@@ -10,16 +10,19 @@ interface UserRef {
 
 interface Split {
   id: string;
-  memberId: string;
+  memberId: string | null;
+  guestMemberId: string | null;
   amount: string;
   shareType: string;
-  member: UserRef;
+  member: UserRef | null;
+  guestMember: { id: string; name: string } | null;
 }
 
 export interface Expense {
   id: string;
   groupId: string;
   payerId: string;
+  guestPayerId: string | null;
   amount: string;
   currency: string;
   category: string;
@@ -27,6 +30,7 @@ export interface Expense {
   date: string;
   splitType: string;
   payer: UserRef;
+  guestPayer: { id: string; name: string } | null;
   splits: Split[];
   createdAt: string;
 }
@@ -65,7 +69,9 @@ export const createExpense = createAsyncThunk(
       category?: string;
       description?: string;
       splitType: string;
-      splits: { memberId: string; value?: number }[];
+      splits: { memberId?: string; guestMemberId?: string; value?: number }[];
+      payerId?: string;
+      guestPayerId?: string;
     },
     { rejectWithValue }
   ) => {

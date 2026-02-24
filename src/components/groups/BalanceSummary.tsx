@@ -39,6 +39,9 @@ export function BalanceSummary({ balances, currentUserId }: BalanceSummaryProps)
                   {isCurrentUser && (
                     <span className="text-indigo-400 text-xs ml-2">(You)</span>
                   )}
+                  {entry.isGuest && (
+                    <span className="text-amber-400/80 text-xs ml-2">(Guest)</span>
+                  )}
                 </p>
                 <p className="text-[#64748B] text-xs mt-0.5">
                   Paid: {parseFloat(entry.totalPaid).toFixed(2)} · Owes: {parseFloat(entry.totalOwed).toFixed(2)}

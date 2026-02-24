@@ -35,12 +35,13 @@ export interface BalanceEntry {
   paymentsOut: string;
   paymentsIn: string;
   net: string;
+  isGuest?: boolean;
 }
 
 interface TransactionState {
   settlements: Settlement[];
   payments: Payment[];
-  balances: BalanceEntry[];
+  balances: Record<string, BalanceEntry[]>;
   isLoading: boolean;
   error: string | null;
 }
@@ -48,7 +49,7 @@ interface TransactionState {
 const initialState: TransactionState = {
   settlements: [],
   payments: [],
-  balances: [],
+  balances: {} as Record<string, BalanceEntry[]>,
   isLoading: false,
   error: null,
 };
@@ -111,7 +112,7 @@ const transactionSlice = createSlice({
     clearTransactions: (state) => {
       state.settlements = [];
       state.payments = [];
-      state.balances = [];
+      state.balances = {};
     },
     clearError: (state) => {
       state.error = null;
@@ -125,7 +126,7 @@ const transactionSlice = createSlice({
       })
       .addCase(fetchBalances.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.balances = action.payload;
+        state.balances[action.meta.arg] = action.payload;
       })
       .addCase(fetchBalances.rejected, (state, action) => {
         state.isLoading = false;
