@@ -1,123 +1,105 @@
-import { createSlice, createAsyncThunk, PayloadAction } from "@reduxjs/toolkit";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { apiClient } from "../../utils/apiClient";
 
-interface TransactionShare {
-  userId: {
-    _id: string;
-    displayName: string;
-    email: string;
-  };
-  share: number;
+interface UserRef {
+  id: string;
+  name: string;
 }
 
-interface Transaction {
-  _id: string;
-  groupId: string;
-  paidBy: {
-    _id: string;
-    displayName: string;
-    email: string;
-  };
-  amount: number;
-  description: string;
-  category: "food" | "transport" | "accommodation" | "activities" | "other";
-  splitBetween: TransactionShare[];
-  date: string;
-  createdAt: string;
-  updatedAt: string;
+export interface Settlement {
+  from: UserRef;
+  to: UserRef;
+  amount: string;
 }
 
-interface Settlement {
-  _id: string;
+export interface Payment {
+  id: string;
   groupId: string;
-  from: {
-    _id: string;
-    displayName: string;
-    email: string;
-  };
-  to: {
-    _id: string;
-    displayName: string;
-    email: string;
-  };
-  amount: number;
-  status: "pending" | "completed";
-  createdAt: string;
-  updatedAt: string;
+  fromUserId: string;
+  toUserId: string;
+  amount: string;
+  currency: string;
+  method: string;
+  note: string | null;
+  recordedAt: string;
+  fromUser: { id: string; email: string; name: string };
+  toUser: { id: string; email: string; name: string };
+}
+
+export interface BalanceEntry {
+  memberId: string;
+  memberName: string;
+  totalPaid: string;
+  totalOwed: string;
+  paymentsOut: string;
+  paymentsIn: string;
+  net: string;
 }
 
 interface TransactionState {
-  transactions: Transaction[];
   settlements: Settlement[];
+  payments: Payment[];
+  balances: BalanceEntry[];
   isLoading: boolean;
   error: string | null;
 }
 
 const initialState: TransactionState = {
-  transactions: [],
   settlements: [],
+  payments: [],
+  balances: [],
   isLoading: false,
   error: null,
 };
 
-// Async thunks
-export const fetchTransactions = createAsyncThunk(
-  "transactions/fetchTransactions",
+export const fetchBalances = createAsyncThunk(
+  "transactions/fetchBalances",
   async (groupId: string, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/groups/${groupId}/transactions`);
+      const response = await apiClient.get(`/groups/${groupId}/balances`);
       return response.data.data;
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.error || "Failed to fetch transactions"
-      );
+      return rejectWithValue(error.response?.data?.error || "Failed to fetch balances");
     }
   }
 );
 
-export const createTransaction = createAsyncThunk(
-  "transactions/createTransaction",
+export const fetchSimplifiedDebts = createAsyncThunk(
+  "transactions/fetchSimplifiedDebts",
+  async (groupId: string, { rejectWithValue }) => {
+    try {
+      const response = await apiClient.post(`/groups/${groupId}/simplify`);
+      return response.data.data;
+    } catch (error: any) {
+      return rejectWithValue(error.response?.data?.error || "Failed to simplify debts");
+    }
+  }
+);
+
+export const recordPayment = createAsyncThunk(
+  "transactions/recordPayment",
   async (
-    transactionData: Omit<Transaction, "_id" | "createdAt" | "updatedAt">,
+    data: { groupId: string; toUserId: string; amount: number; currency?: string; method?: string; note?: string },
     { rejectWithValue }
   ) => {
     try {
-      const response = await apiClient.post("/transactions", transactionData);
+      const response = await apiClient.post(`/groups/${data.groupId}/payments`, data);
       return response.data.data;
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.error || "Failed to create transaction"
-      );
+      return rejectWithValue(error.response?.data?.error || "Failed to record payment");
     }
   }
 );
 
-export const fetchSettlements = createAsyncThunk(
-  "transactions/fetchSettlements",
+export const fetchPayments = createAsyncThunk(
+  "transactions/fetchPayments",
   async (groupId: string, { rejectWithValue }) => {
     try {
-      const response = await apiClient.get(`/groups/${groupId}/settlements`);
+      const response = await apiClient.get(`/groups/${groupId}/payments`);
       return response.data.data;
     } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.error || "Failed to fetch settlements"
-      );
-    }
-  }
-);
-
-export const markSettlementCompleted = createAsyncThunk(
-  "transactions/markSettlementCompleted",
-  async (settlementId: string, { rejectWithValue }) => {
-    try {
-      const response = await apiClient.patch(`/settlements/${settlementId}`, {
-        status: "completed",
-      });
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.error || "Failed to mark settlement as completed"
-      );
+      return rejectWithValue(error.response?.data?.error || "Failed to fetch payments");
     }
   }
 );
@@ -127,10 +109,9 @@ const transactionSlice = createSlice({
   initialState,
   reducers: {
     clearTransactions: (state) => {
-      state.transactions = [];
-    },
-    clearSettlements: (state) => {
       state.settlements = [];
+      state.payments = [];
+      state.balances = [];
     },
     clearError: (state) => {
       state.error = null;
@@ -138,41 +119,35 @@ const transactionSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchTransactions.pending, (state) => {
+      .addCase(fetchBalances.pending, (state) => {
         state.isLoading = true;
         state.error = null;
       })
-      .addCase(fetchTransactions.fulfilled, (state, action) => {
+      .addCase(fetchBalances.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.transactions = action.payload;
+        state.balances = action.payload;
       })
-      .addCase(fetchTransactions.rejected, (state, action) => {
+      .addCase(fetchBalances.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      .addCase(createTransaction.fulfilled, (state, action) => {
-        state.transactions.push(action.payload);
-      })
-      .addCase(createTransaction.rejected, (state, action) => {
-        state.error = action.payload as string;
-      })
-      .addCase(fetchSettlements.fulfilled, (state, action) => {
+      .addCase(fetchSimplifiedDebts.fulfilled, (state, action) => {
         state.settlements = action.payload;
       })
-      .addCase(fetchSettlements.rejected, (state, action) => {
+      .addCase(fetchSimplifiedDebts.rejected, (state, action) => {
         state.error = action.payload as string;
       })
-      .addCase(markSettlementCompleted.fulfilled, (state, action) => {
-        const index = state.settlements.findIndex(
-          (s) => s._id === action.payload._id
-        );
-        if (index !== -1) {
-          state.settlements[index] = action.payload;
-        }
+      .addCase(recordPayment.fulfilled, (state, action) => {
+        state.payments.unshift(action.payload);
+      })
+      .addCase(recordPayment.rejected, (state, action) => {
+        state.error = action.payload as string;
+      })
+      .addCase(fetchPayments.fulfilled, (state, action) => {
+        state.payments = action.payload;
       });
   },
 });
 
-export const { clearTransactions, clearSettlements, clearError } =
-  transactionSlice.actions;
+export const { clearTransactions, clearError } = transactionSlice.actions;
 export default transactionSlice.reducer;
